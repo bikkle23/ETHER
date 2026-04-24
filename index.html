@@ -129,7 +129,7 @@
   /* ── SENSOR METERS ── */
   #meters {
     display: grid;
-    grid-template-columns: repeat(3,1fr);
+    grid-template-columns: repeat(4,1fr);
     gap: 6px;
   }
 
@@ -337,6 +337,11 @@
       <div class="meter-val" id="vBeta">0.0</div>
     </div>
     <div class="meter-box">
+      <div class="meter-label">ORIENT-γ</div>
+      <div class="meter-bar-wrap"><div class="meter-bar" id="mGamma"></div></div>
+      <div class="meter-val" id="vGamma">0.0</div>
+    </div>
+    <div class="meter-box">
       <div class="meter-label">ACCEL-G</div>
       <div class="meter-bar-wrap"><div class="meter-bar" id="mAccel" style="background:var(--red)"></div></div>
       <div class="meter-val" id="vAccel">0.0</div>
@@ -381,11 +386,11 @@
   let padX = 0.5, padY = 0.5;
   let rafId = null;
   let spikeActive = false;
-  let orientAlpha = 0, orientBeta = 0, accelMag = 0;
+  let orientAlpha = 0, orientBeta = 0, orientGamma = 0, accelMag = 0;
   let padPointerDown = false;
 
-  const SPIKE_THRESHOLD = 12;
-  const SPIKE_COOLDOWN_MS = 200;
+  const SPIKE_THRESHOLD = 6;
+  const SPIKE_COOLDOWN_MS = 120;
   let spikeCooldown = false;
 
   // ── DOM ──
@@ -408,9 +413,11 @@
   // Meters
   const mAlpha = document.getElementById('mAlpha');
   const mBeta = document.getElementById('mBeta');
+  const mGamma = document.getElementById('mGamma');
   const mAccel = document.getElementById('mAccel');
   const vAlpha = document.getElementById('vAlpha');
   const vBeta = document.getElementById('vBeta');
+  const vGamma = document.getElementById('vGamma');
   const vAccel = document.getElementById('vAccel');
 
   // ── HELPERS ──
@@ -454,6 +461,21 @@
     // Channel merger L/R
     const merger = audioCtx.createChannelMerger(2);
     merger.connect(dcFilter);
+
+    // ─ DELAY LAYER ─
+    const delayNode = audioCtx.createDelay(2.0);
+    delayNode.delayTime.value = 0.2;
+    const feedbackGain = audioCtx.createGain();
+    feedbackGain.gain.value = 0.3;
+    
+    // Feedback loop
+    delayNode.connect(feedbackGain);
+    feedbackGain.connect(delayNode);
+    
+    // Connect dcFilter to delay (so delay gets the full processed mix)
+    // and both dcFilter and delay to limiter
+    dcFilter.connect(delayNode);
+    delayNode.connect(limiter);
 
     // ─ NOISE LAYER ─
     const bufferSize = audioCtx.sampleRate * 2;
@@ -501,7 +523,7 @@
 
     // ─ HIGH-FREQ LAYER (R channel) ─
     const hfOsc = audioCtx.createOscillator();
-    hfOsc.type = 'sawtooth';
+    hfOsc.type = 'sine';
     hfOsc.frequency.value = 3000;
     const hfGain = audioCtx.createGain();
     hfGain.gain.value = 0.0; // triggered by motion spikes
@@ -510,15 +532,17 @@
     hfGain.connect(merger, 0, 1); // R channel
 
     // Store refs
-    nodes = { masterGain, noiseBPF, droneOsc, preGain, hfOsc, hfGain };
+    nodes = { masterGain, noiseBPF, droneOsc, preGain, hfOsc, hfGain, delayNode, feedbackGain };
   }
 
   // ── SENSOR HANDLERS ──
   function handleOrientation(e) {
     const alpha = e.alpha || 0;
     const beta  = e.beta  || 0;
+    const gamma = e.gamma || 0;
     orientAlpha = alpha;
     orientBeta  = beta;
+    orientGamma = gamma;
 
     if (!audioCtx || !nodes.noiseBPF) return;
     const s = sensitivity;
@@ -534,6 +558,17 @@
     const alphaN = (alpha % 360) / 360;
     const droneFreq = 40 + alphaN * s * 60;
     nodes.droneOsc.frequency.setTargetAtTime(clamp(droneFreq, 40, 100), now, tc);
+
+    if (nodes.delayNode) {
+      // Gamma [-90..90] → Delay Time [0.01..0.8s]
+      const gammaN = clamp((gamma + 90) / 180, 0, 1);
+      const dTime = 0.01 + gammaN * 0.79 * s;
+      nodes.delayNode.delayTime.setTargetAtTime(clamp(dTime, 0.01, 1.0), now, tc);
+
+      // Alpha [0..360] → Delay Feedback (Depth) [0.0..0.85]
+      const dFeedback = alphaN * 0.85 * s;
+      nodes.feedbackGain.gain.setTargetAtTime(clamp(dFeedback, 0.0, 0.95), now, tc);
+    }
   }
 
   function handleMotion(e) {
@@ -545,14 +580,25 @@
     if (accelMag > SPIKE_THRESHOLD && !spikeCooldown) {
       spikeCooldown = true;
       const now = audioCtx.currentTime;
-      const tc = 0.07;
+      
+      // Make the volume spike much louder and punchier
       nodes.hfGain.gain.cancelScheduledValues(now);
-      nodes.hfGain.gain.setValueAtTime(0.8, now);
-      nodes.hfGain.gain.setTargetAtTime(0.0, now + 0.01, 0.05);
+      nodes.hfGain.gain.setValueAtTime(1.5, now);
+      nodes.hfGain.gain.setTargetAtTime(0.0, now + 0.02, 0.1);
 
-      // HF freq randomize on spike
-      const hfFreq = 2000 + Math.random() * 6000;
-      nodes.hfOsc.frequency.setTargetAtTime(hfFreq, now, tc);
+      // Extreme frequency jump (Sine wave laser/blip effect)
+      const hfBaseFreq = 200 + Math.random() * 2000;
+      nodes.hfOsc.frequency.cancelScheduledValues(now);
+      nodes.hfOsc.frequency.setValueAtTime(hfBaseFreq * 4, now);
+      nodes.hfOsc.frequency.exponentialRampToValueAtTime(hfBaseFreq, now + 0.1);
+
+      // Temporarily blast the distortion drive
+      if (nodes.preGain) {
+        nodes.preGain.gain.cancelScheduledValues(now);
+        nodes.preGain.gain.setValueAtTime(100.0, now);
+        const returnDrive = 1.0 + padX * padX * 80.0;
+        nodes.preGain.gain.setTargetAtTime(returnDrive, now + 0.05, 0.1);
+      }
 
       setTimeout(() => { spikeCooldown = false; }, SPIKE_COOLDOWN_MS);
     }
@@ -669,6 +715,11 @@
     const bn = clamp((orientBeta + 90) / 180, 0, 1);
     mBeta.style.width = (bn * 100) + '%';
     vBeta.textContent = orientBeta.toFixed(1);
+
+    // Gamma [-90..90]
+    const gn = clamp((orientGamma + 90) / 180, 0, 1);
+    mGamma.style.width = (gn * 100) + '%';
+    vGamma.textContent = orientGamma.toFixed(1);
 
     // Accel (0..30)
     const accN = clamp(accelMag / 30, 0, 1);
