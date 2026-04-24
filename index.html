@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ETHER V2 — Field Noise Interface</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap');
+
+  :root {
+    --bg: #0a0a0a;
+    --panel: #111214;
+    --border: #2a2e35;
+    --accent: #c8ff00;
+    --red: #ff2244;
+    --dim: #3a3f4a;
+    --text: #8a9aaa;
+    --bright: #ccd6e0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--bright);
+    font-family: 'Share Tech Mono', monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ── BOOT OVERLAY ── */
+  #boot {
+    position: fixed; inset: 0;
+    background: #000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 999;
+    gap: 24px;
+  }
+
+  #boot h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 2.4rem;
+    letter-spacing: 0.3em;
+    color: var(--accent);
+    text-shadow: 0 0 20px var(--accent), 0 0 60px rgba(200,255,0,0.3);
+  }
+
+  #boot p {
+    font-size: 0.75rem;
+    color: var(--dim);
+    letter-spacing: 0.15em;
+    text-align: center;
+    line-height: 1.8;
+  }
+
+  #startBtn {
+    margin-top: 16px;
+    padding: 16px 48px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1rem;
+    letter-spacing: 0.2em;
+    border: 1px solid var(--accent);
+    background: transparent;
+    color: var(--accent);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+
+  #startBtn:active {
+    background: rgba(200,255,0,0.12);
+    box-shadow: 0 0 30px rgba(200,255,0,0.5);
+  }
+
+  /* ── MAIN APP ── */
+  #app {
+    display: none;
+    flex-direction: column;
+    width: 100%; height: 100%;
+    padding: 10px;
+    gap: 10px;
+  }
+
+  #app.visible { display: flex; }
+
+  /* ── HEADER ── */
+  #header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+  }
+
+  #header .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 1.1rem;
+    letter-spacing: 0.3em;
+    color: var(--accent);
+    text-shadow: 0 0 10px rgba(200,255,0,0.5);
+  }
+
+  #header .status {
+    font-size: 0.65rem;
+    color: var(--text);
+    letter-spacing: 0.1em;
+    text-align: right;
+    line-height: 1.6;
+  }
+
+  #statusDot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--red);
+    margin-right: 4px;
+    vertical-align: middle;
+    animation: blink 1.2s infinite;
+  }
+
+  #statusDot.active { background: var(--accent); animation: none; }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* ── SENSOR METERS ── */
+  #meters {
+    display: grid;
+    grid-template-columns: repeat(3,1fr);
+    gap: 6px;
+  }
+
+  .meter-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .meter-label {
+    font-size: 0.55rem;
+    color: var(--text);
+    letter-spacing: 0.1em;
+  }
+
+  .meter-bar-wrap {
+    height: 4px;
+    background: #1a1e24;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .meter-bar {
+    height: 100%;
+    width: 50%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.08s linear;
+  }
+
+  .meter-val {
+    font-size: 0.6rem;
+    color: var(--accent);
+    text-align: right;
+  }
+
+  /* ── TOUCHPAD ── */
+  #padWrap {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 0;
+  }
+
+  #padLabel {
+    font-size: 0.6rem;
+    color: var(--text);
+    letter-spacing: 0.15em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  #padLabel span { color: var(--dim); font-size: 0.55rem; }
+
+  #touchpad {
+    flex: 1;
+    position: relative;
+    border: 1px solid var(--dim);
+    background: radial-gradient(ellipse at center, #0f1318 0%, #080a0d 100%);
+    touch-action: none;
+    cursor: crosshair;
+    overflow: hidden;
+    box-shadow:
+      inset 0 0 30px rgba(0,0,0,0.8),
+      0 0 1px rgba(200,255,0,0.15),
+      0 0 8px rgba(200,255,0,0.05);
+  }
+
+  #touchpad::before {
+    content: '';
+    position: absolute; inset: 0;
+    background:
+      linear-gradient(rgba(200,255,0,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(200,255,0,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+  }
+
+  #padCanvas {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+  }
+
+  #padAxisX {
+    position: absolute;
+    bottom: 4px; left: 0; right: 0;
+    text-align: center;
+    font-size: 0.5rem;
+    color: var(--dim);
+    letter-spacing: 0.1em;
+    pointer-events: none;
+  }
+
+  #padAxisY {
+    position: absolute;
+    top: 0; bottom: 0;
+    right: 4px;
+    display: flex;
+    align-items: center;
+    font-size: 0.5rem;
+    color: var(--dim);
+    letter-spacing: 0.1em;
+    pointer-events: none;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+  }
+
+  /* ── SLIDERS ── */
+  #controls {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+  }
+
+  .ctrl-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .ctrl-label {
+    font-size: 0.6rem;
+    color: var(--text);
+    letter-spacing: 0.12em;
+    width: 90px;
+    flex-shrink: 0;
+  }
+
+  .ctrl-val {
+    font-size: 0.6rem;
+    color: var(--accent);
+    width: 36px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  input[type=range] {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    outline: none;
+  }
+
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(200,255,0,0.6);
+    cursor: pointer;
+  }
+
+  /* ── FOOTER ── */
+  #footer {
+    font-size: 0.5rem;
+    color: #2a2e35;
+    letter-spacing: 0.08em;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- BOOT SCREEN -->
+<div id="boot">
+  <h1>ETHER V2</h1>
+  <p>ELECTROMAGNETIC FIELD TRANSDUCER<br>INDUSTRIAL NOISE INTERFACE — FIELD UNIT</p>
+  <button id="startBtn">⬡ POWER ON</button>
+  <p style="font-size:0.6rem; margin-top:8px;">TAP TO INITIALIZE AUDIO ENGINE &amp; SENSORS</p>
+</div>
+
+<!-- MAIN APP -->
+<div id="app">
+  <div id="header">
+    <div class="logo">ETHER</div>
+    <div class="status">
+      <span id="statusDot"></span>
+      <span id="statusText">STANDBY</span><br>
+      <span id="sensorStatus" style="font-size:0.55rem; color:var(--dim)">SENSOR: —</span>
+    </div>
+  </div>
+
+  <div id="meters">
+    <div class="meter-box">
+      <div class="meter-label">ORIENT-α</div>
+      <div class="meter-bar-wrap"><div class="meter-bar" id="mAlpha"></div></div>
+      <div class="meter-val" id="vAlpha">0.0</div>
+    </div>
+    <div class="meter-box">
+      <div class="meter-label">ORIENT-β</div>
+      <div class="meter-bar-wrap"><div class="meter-bar" id="mBeta"></div></div>
+      <div class="meter-val" id="vBeta">0.0</div>
+    </div>
+    <div class="meter-box">
+      <div class="meter-label">ACCEL-G</div>
+      <div class="meter-bar-wrap"><div class="meter-bar" id="mAccel" style="background:var(--red)"></div></div>
+      <div class="meter-val" id="vAccel">0.0</div>
+    </div>
+  </div>
+
+  <div id="padWrap">
+    <div id="padLabel">
+      X/Y TOUCH FIELD <span>X→DRIVE · Y↑RESONANCE</span>
+    </div>
+    <div id="touchpad">
+      <canvas id="padCanvas"></canvas>
+      <div id="padAxisX">◄ DRIVE ►</div>
+      <div id="padAxisY">RESONANCE</div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div class="ctrl-row">
+      <div class="ctrl-label">SENSITIVITY</div>
+      <input type="range" id="sensitivitySlider" min="0.1" max="3.0" step="0.05" value="1.0">
+      <div class="ctrl-val" id="sensitivityVal">1.0</div>
+    </div>
+    <div class="ctrl-row">
+      <div class="ctrl-label">VOLUME</div>
+      <input type="range" id="volumeSlider" min="0.0" max="1.0" step="0.01" value="0.6">
+      <div class="ctrl-val" id="volumeVal">0.60</div>
+    </div>
+  </div>
+
+  <div id="footer">SOMA LABORATORY / ETHER V2 — FIELD NOISE TRANSDUCER</div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ── STATE ──
+  let audioCtx = null;
+  let nodes = {};
+  let sensitivity = 1.0;
+  let padX = 0.5, padY = 0.5;
+  let rafId = null;
+  let spikeActive = false;
+  let orientAlpha = 0, orientBeta = 0, accelMag = 0;
+  let padPointerDown = false;
+
+  const SPIKE_THRESHOLD = 12;
+  const SPIKE_COOLDOWN_MS = 200;
+  let spikeCooldown = false;
+
+  // ── DOM ──
+  const bootEl = document.getElementById('boot');
+  const appEl = document.getElementById('app');
+  const startBtn = document.getElementById('startBtn');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const sensorStatus = document.getElementById('sensorStatus');
+  const touchpad = document.getElementById('touchpad');
+  const padCanvas = document.getElementById('padCanvas');
+  const ctx2d = padCanvas.getContext('2d');
+
+  // Sliders
+  const sensitivitySlider = document.getElementById('sensitivitySlider');
+  const volumeSlider = document.getElementById('volumeSlider');
+  const sensitivityVal = document.getElementById('sensitivityVal');
+  const volumeVal = document.getElementById('volumeVal');
+
+  // Meters
+  const mAlpha = document.getElementById('mAlpha');
+  const mBeta = document.getElementById('mBeta');
+  const mAccel = document.getElementById('mAccel');
+  const vAlpha = document.getElementById('vAlpha');
+  const vBeta = document.getElementById('vBeta');
+  const vAccel = document.getElementById('vAccel');
+
+  // ── HELPERS ──
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+  function lerp(a, b, t) { return a + (b - a) * t; }
+
+  function makeDistortionCurve(n) {
+    const k = 200;
+    const curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = (Math.PI + k) * x / (Math.PI + k * Math.abs(x));
+    }
+    return curve;
+  }
+
+  // ── AUDIO INIT ──
+  function initAudio() {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    // Master gain
+    const masterGain = audioCtx.createGain();
+    masterGain.gain.value = parseFloat(volumeSlider.value);
+    masterGain.connect(audioCtx.destination);
+
+    // Limiter / compressor
+    const limiter = audioCtx.createDynamicsCompressor();
+    limiter.threshold.value = -3;
+    limiter.knee.value = 0;
+    limiter.ratio.value = 20;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.1;
+    limiter.connect(masterGain);
+
+    // DC offset removal
+    const dcFilter = audioCtx.createBiquadFilter();
+    dcFilter.type = 'highpass';
+    dcFilter.frequency.value = 15;
+    dcFilter.connect(limiter);
+
+    // Channel merger L/R
+    const merger = audioCtx.createChannelMerger(2);
+    merger.connect(dcFilter);
+
+    // ─ NOISE LAYER ─
+    const bufferSize = audioCtx.sampleRate * 2;
+    const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+    const noiseData = noiseBuffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) noiseData[i] = Math.random() * 2 - 1;
+
+    const noiseSource = audioCtx.createBufferSource();
+    noiseSource.buffer = noiseBuffer;
+    noiseSource.loop = true;
+    noiseSource.start();
+
+    const noiseBPF = audioCtx.createBiquadFilter();
+    noiseBPF.type = 'bandpass';
+    noiseBPF.frequency.value = 800;
+    noiseBPF.Q.value = 5;
+
+    noiseSource.connect(noiseBPF);
+
+    // ─ DRONE LAYER ─
+    const droneOsc = audioCtx.createOscillator();
+    droneOsc.type = 'sine';
+    droneOsc.frequency.value = 55;
+    const droneGain = audioCtx.createGain();
+    droneGain.gain.value = 0.6;
+    droneOsc.connect(droneGain);
+    droneOsc.start();
+
+    // ─ PRE-GAIN (DRIVE) → WAVESHAPER (L channel) ─
+    const preGain = audioCtx.createGain();
+    preGain.gain.value = 1.0;
+    noiseBPF.connect(preGain);
+    droneGain.connect(preGain);
+
+    const waveShaper = audioCtx.createWaveShaper();
+    waveShaper.curve = makeDistortionCurve(4096);
+    waveShaper.oversample = '4x';
+    preGain.connect(waveShaper);
+
+    // Waveshaper post-gain (normalize)
+    const wsPostGain = audioCtx.createGain();
+    wsPostGain.gain.value = 0.7;
+    waveShaper.connect(wsPostGain);
+    wsPostGain.connect(merger, 0, 0); // L channel
+
+    // ─ HIGH-FREQ LAYER (R channel) ─
+    const hfOsc = audioCtx.createOscillator();
+    hfOsc.type = 'sawtooth';
+    hfOsc.frequency.value = 3000;
+    const hfGain = audioCtx.createGain();
+    hfGain.gain.value = 0.0; // triggered by motion spikes
+    hfOsc.connect(hfGain);
+    hfOsc.start();
+    hfGain.connect(merger, 0, 1); // R channel
+
+    // Store refs
+    nodes = { masterGain, noiseBPF, droneOsc, preGain, hfOsc, hfGain };
+  }
+
+  // ── SENSOR HANDLERS ──
+  function handleOrientation(e) {
+    const alpha = e.alpha || 0;
+    const beta  = e.beta  || 0;
+    orientAlpha = alpha;
+    orientBeta  = beta;
+
+    if (!audioCtx || !nodes.noiseBPF) return;
+    const s = sensitivity;
+    const tc = 0.07;
+    const now = audioCtx.currentTime;
+
+    // Beta [-90..90] → noise BPF freq [100..5000]
+    const betaN = clamp((beta + 90) / 180, 0, 1);
+    const noiseFreq = 100 + betaN * s * 4900;
+    nodes.noiseBPF.frequency.setTargetAtTime(clamp(noiseFreq, 100, 5000), now, tc);
+
+    // Alpha [0..360] → drone freq [40..100]
+    const alphaN = (alpha % 360) / 360;
+    const droneFreq = 40 + alphaN * s * 60;
+    nodes.droneOsc.frequency.setTargetAtTime(clamp(droneFreq, 40, 100), now, tc);
+  }
+
+  function handleMotion(e) {
+    if (!audioCtx || !nodes.hfGain) return;
+    const ag = e.accelerationIncludingGravity || {};
+    const ax = ag.x || 0, ay = ag.y || 0, az = ag.z || 0;
+    accelMag = Math.sqrt(ax*ax + ay*ay + az*az);
+
+    if (accelMag > SPIKE_THRESHOLD && !spikeCooldown) {
+      spikeCooldown = true;
+      const now = audioCtx.currentTime;
+      const tc = 0.07;
+      nodes.hfGain.gain.cancelScheduledValues(now);
+      nodes.hfGain.gain.setValueAtTime(0.8, now);
+      nodes.hfGain.gain.setTargetAtTime(0.0, now + 0.01, 0.05);
+
+      // HF freq randomize on spike
+      const hfFreq = 2000 + Math.random() * 6000;
+      nodes.hfOsc.frequency.setTargetAtTime(hfFreq, now, tc);
+
+      setTimeout(() => { spikeCooldown = false; }, SPIKE_COOLDOWN_MS);
+    }
+  }
+
+  // ── TOUCHPAD ──
+  function resizePadCanvas() {
+    padCanvas.width = touchpad.clientWidth;
+    padCanvas.height = touchpad.clientHeight;
+  }
+
+  function drawPad() {
+    const w = padCanvas.width, h = padCanvas.height;
+    ctx2d.clearRect(0, 0, w, h);
+
+    const px = padX * w;
+    const py = padY * h;
+
+    // Crosshair lines
+    ctx2d.strokeStyle = 'rgba(200,255,0,0.18)';
+    ctx2d.lineWidth = 1;
+    ctx2d.setLineDash([4, 6]);
+    ctx2d.beginPath();
+    ctx2d.moveTo(px, 0); ctx2d.lineTo(px, h);
+    ctx2d.moveTo(0, py); ctx2d.lineTo(w, py);
+    ctx2d.stroke();
+    ctx2d.setLineDash([]);
+
+    // Center dot glow
+    const grad = ctx2d.createRadialGradient(px, py, 0, px, py, 22);
+    grad.addColorStop(0, 'rgba(200,255,0,0.95)');
+    grad.addColorStop(0.3, 'rgba(200,255,0,0.4)');
+    grad.addColorStop(1, 'rgba(200,255,0,0)');
+    ctx2d.fillStyle = grad;
+    ctx2d.beginPath();
+    ctx2d.arc(px, py, 22, 0, Math.PI * 2);
+    ctx2d.fill();
+
+    // Core dot
+    ctx2d.fillStyle = '#c8ff00';
+    ctx2d.beginPath();
+    ctx2d.arc(px, py, 4, 0, Math.PI * 2);
+    ctx2d.fill();
+
+    // Corner tick marks
+    const tm = 12;
+    ctx2d.strokeStyle = 'rgba(200,255,0,0.4)';
+    ctx2d.lineWidth = 1.5;
+    [[0,0],[w,0],[0,h],[w,h]].forEach(([cx,cy]) => {
+      const sx = cx === 0 ? 1 : -1, sy = cy === 0 ? 1 : -1;
+      ctx2d.beginPath();
+      ctx2d.moveTo(cx + sx * 2, cy + sy * 2);
+      ctx2d.lineTo(cx + sx * tm, cy + sy * 2);
+      ctx2d.moveTo(cx + sx * 2, cy + sy * 2);
+      ctx2d.lineTo(cx + sx * 2, cy + sy * tm);
+      ctx2d.stroke();
+    });
+
+    rafId = requestAnimationFrame(drawPad);
+  }
+
+  function updateAudioFromPad() {
+    if (!audioCtx || !nodes.preGain) return;
+    const now = audioCtx.currentTime;
+    const tc = 0.05;
+    // X → Pre-Gain (Drive): 1.0 → 50.0+
+    const drive = 1.0 + padX * padX * 80.0;
+    nodes.preGain.gain.setTargetAtTime(drive, now, tc);
+    // Y → BPF Q (Resonance): top=30, bottom=1
+    const q = 1.0 + (1.0 - padY) * 29.0;
+    nodes.noiseBPF.Q.setTargetAtTime(q, now, tc);
+  }
+
+  function getPadCoords(e) {
+    const rect = touchpad.getBoundingClientRect();
+    const nx = clamp((e.clientX - rect.left) / rect.width,  0, 1);
+    const ny = clamp((e.clientY - rect.top)  / rect.height, 0, 1);
+    return [nx, ny];
+  }
+
+  touchpad.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    touchpad.setPointerCapture(e.pointerId);
+    padPointerDown = true;
+    [padX, padY] = getPadCoords(e);
+    updateAudioFromPad();
+  });
+
+  touchpad.addEventListener('pointermove', (e) => {
+    if (!padPointerDown) return;
+    e.preventDefault();
+    [padX, padY] = getPadCoords(e);
+    updateAudioFromPad();
+  });
+
+  touchpad.addEventListener('pointerup', (e) => {
+    e.preventDefault();
+    padPointerDown = false;
+    // Hold last position — no reset
+  });
+
+  touchpad.addEventListener('pointercancel', (e) => {
+    padPointerDown = false;
+  });
+
+  // ── UI METER UPDATE ──
+  function updateMeters() {
+    // Alpha [0..360]
+    const an = clamp(orientAlpha / 360, 0, 1);
+    mAlpha.style.width = (an * 100) + '%';
+    vAlpha.textContent = orientAlpha.toFixed(1);
+
+    // Beta [-90..90]
+    const bn = clamp((orientBeta + 90) / 180, 0, 1);
+    mBeta.style.width = (bn * 100) + '%';
+    vBeta.textContent = orientBeta.toFixed(1);
+
+    // Accel (0..30)
+    const accN = clamp(accelMag / 30, 0, 1);
+    mAccel.style.width = (accN * 100) + '%';
+    vAccel.textContent = accelMag.toFixed(1);
+
+    requestAnimationFrame(updateMeters);
+  }
+
+  // ── SLIDER HANDLERS ──
+  sensitivitySlider.addEventListener('input', () => {
+    sensitivity = parseFloat(sensitivitySlider.value);
+    sensitivityVal.textContent = sensitivity.toFixed(1);
+  });
+
+  volumeSlider.addEventListener('input', () => {
+    const v = parseFloat(volumeSlider.value);
+    volumeVal.textContent = v.toFixed(2);
+    if (nodes.masterGain) {
+      nodes.masterGain.gain.setTargetAtTime(v, audioCtx.currentTime, 0.05);
+    }
+  });
+
+  // ── START ──
+  startBtn.addEventListener('click', async () => {
+    try {
+      // 1. Init AudioContext
+      initAudio();
+      await audioCtx.resume();
+
+      // 2. Sensor listeners (Android — no permission request)
+      let sensorOk = false;
+      if ('ondeviceorientation' in window) {
+        window.addEventListener('deviceorientation', handleOrientation, true);
+        sensorOk = true;
+      }
+      if ('ondevicemotion' in window) {
+        window.addEventListener('devicemotion', handleMotion, true);
+        sensorOk = true;
+      }
+
+      // 3. Show app
+      bootEl.style.display = 'none';
+      appEl.classList.add('visible');
+
+      // 4. Resize canvas & start loops
+      resizePadCanvas();
+      window.addEventListener('resize', resizePadCanvas);
+      drawPad();
+      updateMeters();
+
+      // 5. Status
+      statusDot.classList.add('active');
+      statusText.textContent = 'TRANSMITTING';
+      sensorStatus.textContent = sensorOk ? 'SENSOR: ACTIVE' : 'SENSOR: UNAVAILABLE';
+
+    } catch(err) {
+      console.error('Init error:', err);
+      startBtn.textContent = 'ERROR — RETRY';
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
