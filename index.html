@@ -389,9 +389,7 @@
   let orientAlpha = 0, orientBeta = 0, orientGamma = 0, accelMag = 0;
   let padPointerDown = false;
 
-  const SPIKE_THRESHOLD = 6;
-  const SPIKE_COOLDOWN_MS = 120;
-  let spikeCooldown = false;
+  // Spike state removed
 
   // ── DOM ──
   const bootEl = document.getElementById('boot');
@@ -521,18 +519,26 @@
     waveShaper.connect(wsPostGain);
     wsPostGain.connect(merger, 0, 0); // L channel
 
-    // ─ HIGH-FREQ LAYER (R channel) ─
-    const hfOsc = audioCtx.createOscillator();
-    hfOsc.type = 'sine';
-    hfOsc.frequency.value = 3000;
-    const hfGain = audioCtx.createGain();
-    hfGain.gain.value = 0.0; // triggered by motion spikes
-    hfOsc.connect(hfGain);
-    hfOsc.start();
-    hfGain.connect(merger, 0, 1); // R channel
+    // ─ ACCEL DRONE LAYER (R channel) ─
+    const droneOsc2 = audioCtx.createOscillator();
+    droneOsc2.type = 'sawtooth';
+    droneOsc2.frequency.value = 73.42; // D2
+    
+    const accelFilter = audioCtx.createBiquadFilter();
+    accelFilter.type = 'lowpass';
+    accelFilter.frequency.value = 100;
+    accelFilter.Q.value = 4;
+    
+    const droneGain2 = audioCtx.createGain();
+    droneGain2.gain.value = 0.6; 
+    
+    droneOsc2.connect(accelFilter);
+    accelFilter.connect(droneGain2);
+    droneOsc2.start();
+    droneGain2.connect(merger, 0, 1); // R channel
 
     // Store refs
-    nodes = { masterGain, noiseBPF, droneOsc, preGain, hfOsc, hfGain, delayNode, feedbackGain };
+    nodes = { masterGain, noiseBPF, droneOsc, preGain, droneOsc2, accelFilter, delayNode, feedbackGain };
   }
 
   // ── SENSOR HANDLERS ──
@@ -572,36 +578,22 @@
   }
 
   function handleMotion(e) {
-    if (!audioCtx || !nodes.hfGain) return;
+    if (!audioCtx || !nodes.accelFilter) return;
     const ag = e.accelerationIncludingGravity || {};
     const ax = ag.x || 0, ay = ag.y || 0, az = ag.z || 0;
     accelMag = Math.sqrt(ax*ax + ay*ay + az*az);
 
-    if (accelMag > SPIKE_THRESHOLD && !spikeCooldown) {
-      spikeCooldown = true;
-      const now = audioCtx.currentTime;
-      
-      // Make the volume spike much louder and punchier
-      nodes.hfGain.gain.cancelScheduledValues(now);
-      nodes.hfGain.gain.setValueAtTime(1.5, now);
-      nodes.hfGain.gain.setTargetAtTime(0.0, now + 0.02, 0.1);
+    const now = audioCtx.currentTime;
+    const s = sensitivity;
+    const tc = 0.08;
 
-      // Extreme frequency jump (Sine wave laser/blip effect)
-      const hfBaseFreq = 200 + Math.random() * 2000;
-      nodes.hfOsc.frequency.cancelScheduledValues(now);
-      nodes.hfOsc.frequency.setValueAtTime(hfBaseFreq * 4, now);
-      nodes.hfOsc.frequency.exponentialRampToValueAtTime(hfBaseFreq, now + 0.1);
-
-      // Temporarily blast the distortion drive
-      if (nodes.preGain) {
-        nodes.preGain.gain.cancelScheduledValues(now);
-        nodes.preGain.gain.setValueAtTime(100.0, now);
-        const returnDrive = 1.0 + padX * padX * 80.0;
-        nodes.preGain.gain.setTargetAtTime(returnDrive, now + 0.05, 0.1);
-      }
-
-      setTimeout(() => { spikeCooldown = false; }, SPIKE_COOLDOWN_MS);
-    }
+    // Calculate shake amount (deviation from standard 1G gravity ~9.8)
+    const shakeAmount = Math.abs(accelMag - 9.8);
+    
+    // Map shake amount to filter cutoff frequency [100 .. 8000Hz]
+    // Filter opens up proportionally to how violently the device is moved
+    const filterFreq = 100 + (shakeAmount * s * 600);
+    nodes.accelFilter.frequency.setTargetAtTime(clamp(filterFreq, 100, 8000), now, tc);
   }
 
   // ── TOUCHPAD ──
