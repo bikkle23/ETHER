@@ -460,20 +460,35 @@
     const merger = audioCtx.createChannelMerger(2);
     merger.connect(dcFilter);
 
-    // ─ DELAY LAYER ─
-    const delayNode = audioCtx.createDelay(2.0);
-    delayNode.delayTime.value = 0.2;
-    const feedbackGain = audioCtx.createGain();
-    feedbackGain.gain.value = 0.3;
+    // ─ DELAY LAYER (STEREO CROSS-FEEDBACK) ─
+    const splitter = audioCtx.createChannelSplitter(2);
+    dcFilter.connect(splitter);
+
+    const delayNodeL = audioCtx.createDelay(2.0);
+    const delayNodeR = audioCtx.createDelay(2.0);
+    delayNodeL.delayTime.value = 0.2;
+    delayNodeR.delayTime.value = 0.26; // R channel is slightly offset
+
+    const feedbackGainL = audioCtx.createGain();
+    const feedbackGainR = audioCtx.createGain();
+    feedbackGainL.gain.value = 0.3;
+    feedbackGainR.gain.value = 0.3;
+
+    // Cross-feedback (Ping-Pong) for stereo wobble: L feeds into R, R feeds into L
+    delayNodeL.connect(feedbackGainL);
+    feedbackGainL.connect(delayNodeR);
+    delayNodeR.connect(feedbackGainR);
+    feedbackGainR.connect(delayNodeL);
+
+    splitter.connect(delayNodeL, 0); // L input
+    splitter.connect(delayNodeR, 1); // R input
+
+    const delayMerger = audioCtx.createChannelMerger(2);
+    delayNodeL.connect(delayMerger, 0, 0);
+    delayNodeR.connect(delayMerger, 0, 1);
     
-    // Feedback loop
-    delayNode.connect(feedbackGain);
-    feedbackGain.connect(delayNode);
-    
-    // Connect dcFilter to delay (so delay gets the full processed mix)
-    // and both dcFilter and delay to limiter
-    dcFilter.connect(delayNode);
-    delayNode.connect(limiter);
+    // Pass wet signal to limiter (dry is already connected above via dcFilter -> limiter)
+    delayMerger.connect(limiter);
 
     // ─ NOISE LAYER ─
     const bufferSize = audioCtx.sampleRate * 2;
@@ -538,7 +553,7 @@
     droneGain2.connect(merger, 0, 1); // R channel
 
     // Store refs
-    nodes = { masterGain, noiseBPF, droneOsc, preGain, droneOsc2, accelFilter, delayNode, feedbackGain };
+    nodes = { masterGain, noiseBPF, droneOsc, preGain, droneOsc2, accelFilter, delayNodeL, delayNodeR, feedbackGainL, feedbackGainR };
   }
 
   // ── SENSOR HANDLERS ──
@@ -565,15 +580,19 @@
     const droneFreq = 40 + alphaN * s * 60;
     nodes.droneOsc.frequency.setTargetAtTime(clamp(droneFreq, 40, 100), now, tc);
 
-    if (nodes.delayNode) {
+    if (nodes.delayNodeL) {
       // Gamma [-90..90] → Delay Time [0.01..0.8s]
       const gammaN = clamp((gamma + 90) / 180, 0, 1);
-      const dTime = 0.01 + gammaN * 0.79 * s;
-      nodes.delayNode.delayTime.setTargetAtTime(clamp(dTime, 0.01, 1.0), now, tc);
+      const baseTime = 0.01 + gammaN * 0.79 * s;
+      
+      // L and R have a 1:1.35 ratio to create stereo wobble and widening
+      nodes.delayNodeL.delayTime.setTargetAtTime(clamp(baseTime, 0.01, 1.0), now, tc);
+      nodes.delayNodeR.delayTime.setTargetAtTime(clamp(baseTime * 1.35, 0.01, 1.0), now, tc);
 
       // Alpha [0..360] → Delay Feedback (Depth) [0.0..0.85]
       const dFeedback = alphaN * 0.85 * s;
-      nodes.feedbackGain.gain.setTargetAtTime(clamp(dFeedback, 0.0, 0.95), now, tc);
+      nodes.feedbackGainL.gain.setTargetAtTime(clamp(dFeedback, 0.0, 0.95), now, tc);
+      nodes.feedbackGainR.gain.setTargetAtTime(clamp(dFeedback, 0.0, 0.95), now, tc);
     }
   }
 
