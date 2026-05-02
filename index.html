@@ -3,15 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>ETHER V2 — Field Noise Interface</title>
+<title>さまよえる蒼い雑音</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700&display=swap');
 
   :root {
-    --bg: #0a0a0a;
-    --panel: #111214;
-    --border: #2a2e35;
+    --bg: #06080f;
+    --panel: #0d1018;
+    --border: #1e2535;
     --accent: #c8ff00;
+    --blue: #3a9eff;
     --red: #ff2244;
     --dim: #3a3f4a;
     --text: #8a9aaa;
@@ -129,9 +130,13 @@
   /* ── SENSOR METERS ── */
   #meters {
     display: grid;
-    grid-template-columns: repeat(4,1fr);
+    grid-template-columns: repeat(5,1fr);
     gap: 6px;
   }
+
+  /* HEIGHT meter — glows cyan to distinguish from others */
+  #mHeight { background: #00eaff; }
+  #vHeight { color: #00eaff !important; }
 
   .meter-box {
     background: var(--panel);
@@ -295,10 +300,43 @@
     cursor: pointer;
   }
 
+  /* ── ENV PANEL ── */
+  #envPanel {
+    background: var(--panel);
+    border: 1px solid #1a2a44;
+    padding: 5px 10px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px 12px;
+  }
+  .env-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.52rem;
+    color: var(--text);
+    letter-spacing: 0.08em;
+  }
+  .env-label {
+    color: #1e3a5a;
+    font-size: 0.48rem;
+    width: 28px;
+    flex-shrink: 0;
+  }
+  .env-val {
+    color: var(--blue);
+    font-size: 0.52rem;
+  }
+  .env-mod {
+    margin-left: auto;
+    font-size: 0.42rem;
+    color: #1e3a5a;
+  }
+
   /* ── FOOTER ── */
   #footer {
     font-size: 0.5rem;
-    color: #2a2e35;
+    color: #1a2535;
     letter-spacing: 0.08em;
     text-align: center;
   }
@@ -308,16 +346,16 @@
 
 <!-- BOOT SCREEN -->
 <div id="boot">
-  <h1>ETHER V2</h1>
-  <p>ELECTROMAGNETIC FIELD TRANSDUCER<br>INDUSTRIAL NOISE INTERFACE — FIELD UNIT</p>
-  <button id="startBtn">⬡ POWER ON</button>
-  <p style="font-size:0.6rem; margin-top:8px;">TAP TO INITIALIZE AUDIO ENGINE &amp; SENSORS</p>
+  <h1 style="font-size:1.6rem; letter-spacing:0.15em; font-family:'Share Tech Mono',monospace; color:#3a9eff; text-shadow:0 0 20px #3a9eff, 0 0 60px rgba(58,158,255,0.3)">さまよえる蒼い雑音</h1>
+  <p style="color:#1e3a5a">WANDERING BLUE NOISE<br>FIELD RESONANCE INSTRUMENT</p>
+  <button id="startBtn" style="border-color:#3a9eff; color:#3a9eff">⬡ 起動</button>
+  <p style="font-size:0.6rem; margin-top:8px; color:#1e3a5a">場所・時間・天候・身体が音になる</p>
 </div>
 
 <!-- MAIN APP -->
 <div id="app">
   <div id="header">
-    <div class="logo">ETHER</div>
+    <div class="logo" style="font-size:0.85rem; letter-spacing:0.12em; font-family:'Share Tech Mono',monospace; color:var(--blue); text-shadow:0 0 8px rgba(58,158,255,0.5)">さまよえる蒼い雑音</div>
     <div class="status">
       <span id="statusDot"></span>
       <span id="statusText">STANDBY</span><br>
@@ -346,6 +384,11 @@
       <div class="meter-bar-wrap"><div class="meter-bar" id="mAccel" style="background:var(--red)"></div></div>
       <div class="meter-val" id="vAccel">0.0</div>
     </div>
+    <div class="meter-box">
+      <div class="meter-label">HEIGHT</div>
+      <div class="meter-bar-wrap"><div class="meter-bar" id="mHeight" style="background:#00eaff"></div></div>
+      <div class="meter-val" id="vHeight" style="color:#00eaff">0.0</div>
+    </div>
   </div>
 
   <div id="padWrap">
@@ -372,7 +415,14 @@
     </div>
   </div>
 
-  <div id="footer">SOMA LABORATORY / ETHER V2 — FIELD NOISE TRANSDUCER</div>
+  <div id="envPanel">
+    <div class="env-row"><span class="env-label">📍LOC</span><span class="env-val" id="envLoc">--</span><span class="env-mod" id="envLocMod"></span></div>
+    <div class="env-row"><span class="env-label">📅DATE</span><span class="env-val" id="envDate">--</span><span class="env-mod" id="envDateMod"></span></div>
+    <div class="env-row"><span class="env-label">🕐TIME</span><span class="env-val" id="envTime">--</span><span class="env-mod" id="envTimeMod"></span></div>
+    <div class="env-row"><span class="env-label">🌡️WX</span><span class="env-val" id="envWx">--</span><span class="env-mod" id="envWxMod"></span></div>
+  </div>
+
+  <div id="footer">さまよえる蒼い雑音 — 場所と時間と身体の共鳴</div>
 </div>
 
 <script>
@@ -389,7 +439,22 @@
   let orientAlpha = 0, orientBeta = 0, orientGamma = 0, accelMag = 0;
   let padPointerDown = false;
 
-  // Spike state removed
+  // ── HEIGHT STATE ──
+  let heightVelocity = 0;
+  let heightLevel   = 0.5;
+  let prevAy = 0;
+
+  // ── ENV STATE (location / date / time / weather) ──
+  // These are WEAK modulators — they nudge the sound gently.
+  const env = {
+    lat: null, lon: null,          // geolocation
+    temp: null, wind: null, cloud: null, // weather
+    wxFetched: false,
+    lastWxFetch: 0,
+  };
+  // Normalised env influence values (0..1), blended into audio each second
+  const envMod = { loc: 0.5, day: 0.5, hour: 0.5, wx: 0.5 };
+  const ENV_DEPTH = 0.10; // max ±10% shift on any parameter
 
   // ── DOM ──
   const bootEl = document.getElementById('boot');
@@ -413,10 +478,22 @@
   const mBeta = document.getElementById('mBeta');
   const mGamma = document.getElementById('mGamma');
   const mAccel = document.getElementById('mAccel');
+  const mHeight = document.getElementById('mHeight');
   const vAlpha = document.getElementById('vAlpha');
   const vBeta = document.getElementById('vBeta');
   const vGamma = document.getElementById('vGamma');
   const vAccel = document.getElementById('vAccel');
+  const vHeight = document.getElementById('vHeight');
+
+  // DOM — env panel
+  const envLoc    = document.getElementById('envLoc');
+  const envDate   = document.getElementById('envDate');
+  const envTime   = document.getElementById('envTime');
+  const envWx     = document.getElementById('envWx');
+  const envLocMod = document.getElementById('envLocMod');
+  const envDateMod= document.getElementById('envDateMod');
+  const envTimeMod= document.getElementById('envTimeMod');
+  const envWxMod  = document.getElementById('envWxMod');
 
   // ── HELPERS ──
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -552,8 +629,36 @@
     droneOsc2.start();
     droneGain2.connect(merger, 0, 1); // R channel
 
+    // ─ HEIGHT PITCH OSC (R channel top layer) ─
+    // A sine drone whose frequency tracks real-time height changes.
+    // At neutral: 110 Hz (A2). Jumps raise it toward 440 Hz, floor lowers to 55 Hz.
+    const heightOsc = audioCtx.createOscillator();
+    heightOsc.type = 'sine';
+    heightOsc.frequency.value = 110;
+
+    const heightGain = audioCtx.createGain();
+    heightGain.gain.value = 0.35;
+
+    // Subtle vibrato via an LFO for organic feel
+    const heightLFO = audioCtx.createOscillator();
+    heightLFO.type = 'sine';
+    heightLFO.frequency.value = 0.4; // slow wobble
+    const heightLFOGain = audioCtx.createGain();
+    heightLFOGain.gain.value = 3; // ±3 Hz vibrato depth
+    heightLFO.connect(heightLFOGain);
+    heightLFOGain.connect(heightOsc.frequency);
+    heightLFO.start();
+
+    heightOsc.connect(heightGain);
+    heightOsc.start();
+    // Mix into both channels for a centered phantom image
+    heightGain.connect(merger, 0, 0);
+    heightGain.connect(merger, 0, 1);
+
     // Store refs
-    nodes = { masterGain, noiseBPF, droneOsc, preGain, droneOsc2, accelFilter, delayNodeL, delayNodeR, feedbackGainL, feedbackGainR };
+    nodes = { masterGain, noiseBPF, droneOsc, preGain, droneOsc2, accelFilter,
+              delayNodeL, delayNodeR, feedbackGainL, feedbackGainR,
+              heightOsc, heightGain };
   }
 
   // ── SENSOR HANDLERS ──
@@ -606,13 +711,68 @@
     const s = sensitivity;
     const tc = 0.08;
 
-    // Calculate shake amount (deviation from standard 1G gravity ~9.8)
+    // ── Shake → accelFilter (existing) ──────────────────────────────────
     const shakeAmount = Math.abs(accelMag - 9.8);
-    
-    // Map shake amount to filter cutoff frequency [100 .. 8000Hz]
-    // Filter opens up proportionally to how violently the device is moved
     const filterFreq = 100 + (shakeAmount * s * 600);
     nodes.accelFilter.frequency.setTargetAtTime(clamp(filterFreq, 100, 8000), now, tc);
+
+    // ── HEIGHT detection via Y-axis gravity ──────────────────────────────
+    // On Android, accelerationIncludingGravity.y is typically ~+9.8 when the
+    // phone is held upright (portrait, screen facing user). A jump causes a
+    // transient INCREASE (phone goes up → body of phone accelerates upward);
+    // crouching / lying on the floor causes a downward shift.
+    //
+    // We compute the *delta* from the previous reading as our velocity impulse,
+    // integrate into heightLevel with a slow gravity-like decay, then map to pitch.
+
+    const deltaAy = ay - prevAy;  // positive = sudden upward force (jump)
+    prevAy = ay;
+
+    // Accumulate velocity impulse (scaled by sensitivity)
+    // Clamp single impulse so extreme shakes don't overshoot
+    heightVelocity += clamp(deltaAy * s * 0.06, -0.25, 0.25);
+
+    // Soft clamp velocity
+    heightVelocity = clamp(heightVelocity, -1.0, 1.0);
+
+    // Integrate into height level (gravity decay toward 0.5 neutral)
+    heightLevel += heightVelocity * 0.08;
+    heightLevel  = clamp(heightLevel, 0.0, 1.0);
+
+    // Return-to-neutral drag (simulates coming back to resting height)
+    const drag = 0.96;  // slightly slower decay for dramatic sustained effect
+    heightVelocity *= drag;
+    // Pull heightLevel slowly back toward 0.5 (neutral)
+    heightLevel = lerp(heightLevel, 0.5, 0.015);
+
+    // ── Map heightLevel → pitch ──────────────────────────────────────────
+    // 0.0 (floor) → 55 Hz (A1, deep rumble)
+    // 0.5 (neutral) → 110 Hz (A2)
+    // 1.0 (jump) → 440 Hz (A4, bright)
+    // Using exponential mapping for musical pitch feel
+    const pitchMin = 55,  pitchNeutral = 110, pitchMax = 440;
+    let heightFreq;
+    if (heightLevel < 0.5) {
+      // below neutral: interpolate exponentially down to pitchMin
+      const t = heightLevel / 0.5; // 0→1
+      heightFreq = pitchMin * Math.pow(pitchNeutral / pitchMin, t);
+    } else {
+      // above neutral: interpolate exponentially up to pitchMax
+      const t = (heightLevel - 0.5) / 0.5; // 0→1
+      heightFreq = pitchNeutral * Math.pow(pitchMax / pitchNeutral, t);
+    }
+
+    if (nodes.heightOsc) {
+      nodes.heightOsc.frequency.setTargetAtTime(clamp(heightFreq, 50, 500), now, 0.12);
+
+      // Also modulate noise BPF slightly (tonal color shifts with height)
+      // This adds a subtle brightness boost when jumping
+      const brightnessBump = (heightLevel - 0.5) * s * 800;
+      const currentNoiseFreq = nodes.noiseBPF.frequency.value;
+      nodes.noiseBPF.frequency.setTargetAtTime(
+        clamp(currentNoiseFreq + brightnessBump, 80, 6000), now, 0.18
+      );
+    }
   }
 
   // ── TOUCHPAD ──
@@ -715,6 +875,125 @@
     padPointerDown = false;
   });
 
+  // ── ENV FUNCTIONS ──
+
+  function initGeolocation() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(pos => {
+      env.lat = pos.coords.latitude;
+      env.lon = pos.coords.longitude;
+      // Lat [-90..90] → 0..1; Lon [-180..180] → 0..1
+      envMod.loc = ((env.lat + 90) / 180 * 0.5) + ((env.lon + 180) / 360 * 0.5);
+      envLoc.textContent = env.lat.toFixed(2) + '°,' + env.lon.toFixed(2) + '°';
+      fetchWeather();
+    }, () => { envLoc.textContent = 'unavail'; });
+  }
+
+  async function fetchWeather() {
+    if (!env.lat || !env.lon) return;
+    const now = Date.now();
+    if (env.wxFetched && now - env.lastWxFetch < 600000) return; // 10min cache
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${env.lat.toFixed(4)}&longitude=${env.lon.toFixed(4)}&current=temperature_2m,wind_speed_10m,cloud_cover`;
+      const r = await fetch(url);
+      const d = await r.json();
+      const c = d.current;
+      env.temp  = c.temperature_2m;   // °C  (−40..+50)
+      env.wind  = c.wind_speed_10m;   // km/h (0..100)
+      env.cloud = c.cloud_cover;      // %    (0..100)
+      env.wxFetched = true;
+      env.lastWxFetch = now;
+      // Normalise
+      const tN = clamp((env.temp + 40) / 90, 0, 1);  // cold=0, hot=1
+      const wN = clamp(env.wind / 80, 0, 1);          // calm=0, stormy=1
+      const cN = clamp(env.cloud / 100, 0, 1);         // clear=0, overcast=1
+      envMod.wx = tN * 0.5 + wN * 0.3 + (1 - cN) * 0.2; // composite
+      envWx.textContent = `${env.temp.toFixed(0)}°C ☁${env.cloud}% 💨${env.wind.toFixed(0)}`;
+    } catch(e) { envWx.textContent = 'wx err'; }
+  }
+
+  function applyEnvModulation() {
+    if (!audioCtx || !nodes.noiseBPF) return;
+    const now = audioCtx.currentTime;
+    const d = new Date();
+
+    // ── DATE ──────────────────────────────────────────
+    const dayOfYear = Math.floor((d - new Date(d.getFullYear(),0,0)) / 86400000);
+    envMod.day = dayOfYear / 365; // 0=Jan1, 1=Dec31
+    envDate.textContent = d.toLocaleDateString('ja-JP',{month:'2-digit',day:'2-digit'});
+    envDateMod.textContent = `d${dayOfYear}`;
+
+    // ── TIME ──────────────────────────────────────────
+    const h = d.getHours(), m = d.getMinutes(), s = d.getSeconds();
+    const secOfDay = h * 3600 + m * 60 + s; // 0..86399
+    // Midnight(0) & noon(43200): use cos to make it a smooth cycle
+    envMod.hour = (1 - Math.cos(secOfDay / 86400 * 2 * Math.PI)) / 2; // 0=midnight, 1=noon
+    envTime.textContent = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+    envTimeMod.textContent = `${envMod.hour > 0.5 ? '☀️' : '🌙'}`;
+
+    // ── Per-second micro-noise via sin/cos of second count ───────────
+    // Combines all env influences into small, overlapping sine waves
+    const phi = secOfDay; // phase grows each second
+    const microNoise =
+      Math.sin(phi * 0.017) * 0.4 +
+      Math.sin(phi * 0.031 + envMod.loc * Math.PI) * 0.3 +
+      Math.sin(phi * 0.007 + envMod.day * Math.PI * 2) * 0.2 +
+      Math.sin(phi * 0.053 + envMod.wx  * Math.PI) * 0.1;
+    // microNoise ≈ −0.95..+0.95; normalise to 0..1
+    const mn = clamp((microNoise + 1) / 2, 0, 1);
+
+    // ── Apply weak modulations ───────────────────────────
+    const D = ENV_DEPTH; // 0.10
+    const tc = 2.0;      // slow glide (2s)
+
+    // LOCATION → base drone pitch offset (±5 Hz around 55 Hz)
+    if (nodes.droneOsc) {
+      const locOffset = (envMod.loc - 0.5) * 2 * D * 10;
+      nodes.droneOsc.frequency.setTargetAtTime(
+        clamp(55 + locOffset, 45, 65), now, tc
+      );
+    }
+
+    // DAY-OF-YEAR → LFO rate of height oscillator (seasonal feel)
+    // Spring/autumn ≈ 0.25/0.75 → faster; winter/summer extremes → slower
+    // We express this as a slight LFO speed variation on the height osc
+    // (we can’t directly touch heightLFO’s freq here but we can modulate
+    // droneOsc2 tuning as a seasonal color shift)
+    if (nodes.droneOsc2) {
+      const seasonShift = (envMod.day - 0.5) * 2 * D * 8;
+      nodes.droneOsc2.frequency.setTargetAtTime(
+        clamp(73.42 + seasonShift, 68, 80), now, tc
+      );
+    }
+
+    // TIME-OF-DAY → noise BPF brightness
+    // Midnight: darker (lower cutoff offset), Noon: brighter
+    if (nodes.noiseBPF) {
+      const timeOffset = (envMod.hour - 0.5) * 2 * D * 300;
+      const curFreq = nodes.noiseBPF.frequency.value;
+      nodes.noiseBPF.frequency.setTargetAtTime(
+        clamp(curFreq + timeOffset + mn * D * 100, 80, 5500), now, tc
+      );
+    }
+
+    // WEATHER → accelFilter coloring (wind=open, cold=closed)
+    if (nodes.accelFilter && env.wxFetched) {
+      const wxOffset = (envMod.wx - 0.5) * 2 * D * 120;
+      const curFilt = nodes.accelFilter.frequency.value;
+      nodes.accelFilter.frequency.setTargetAtTime(
+        clamp(curFilt + wxOffset, 80, 7000), now, tc
+      );
+      envWxMod.textContent = (envMod.wx > 0.5 ? '⇧open' : '⇧shut');
+    }
+
+    // Refetch weather if needed
+    if (env.lat && Date.now() - env.lastWxFetch > 600000) fetchWeather();
+
+    // Update loc display mod
+    envLocMod.textContent = `λm${mn.toFixed(2)}`;
+    envDateMod.textContent = `❂${(envMod.day * 12 | 0) + 1}m`;
+  }
+
   // ── UI METER UPDATE ──
   function updateMeters() {
     // Alpha [0..360]
@@ -736,6 +1015,11 @@
     const accN = clamp(accelMag / 30, 0, 1);
     mAccel.style.width = (accN * 100) + '%';
     vAccel.textContent = accelMag.toFixed(1);
+
+    // Height [0..1] — cyan meter
+    mHeight.style.width = (clamp(heightLevel, 0, 1) * 100) + '%';
+    // Show as relative offset from neutral: -1.0 (floor) to +1.0 (sky)
+    vHeight.textContent = ((heightLevel - 0.5) * 2).toFixed(2);
 
     requestAnimationFrame(updateMeters);
   }
@@ -785,7 +1069,13 @@
       // 5. Status
       statusDot.classList.add('active');
       statusText.textContent = 'TRANSMITTING';
-      sensorStatus.textContent = sensorOk ? 'SENSOR: ACTIVE' : 'SENSOR: UNAVAILABLE';
+      sensorStatus.textContent = sensorOk ? 'SENSOR: ON' : 'SENSOR: —';
+
+      // 6. Init environment (location + weather + time)
+      initGeolocation();
+      // Run immediately and then every second
+      applyEnvModulation();
+      setInterval(applyEnvModulation, 1000);
 
     } catch(err) {
       console.error('Init error:', err);
