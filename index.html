@@ -349,7 +349,11 @@
   <h1 style="font-size:1.6rem; letter-spacing:0.15em; font-family:'Share Tech Mono',monospace; color:#3a9eff; text-shadow:0 0 20px #3a9eff, 0 0 60px rgba(58,158,255,0.3)">さまよえる蒼い雑音</h1>
   <p style="color:#1e3a5a">WANDERING BLUE NOISE<br>FIELD RESONANCE INSTRUMENT</p>
   <button id="startBtn" style="border-color:#3a9eff; color:#3a9eff">⬡ 起動</button>
-  <p style="font-size:0.6rem; margin-top:8px; color:#1e3a5a">場所・時間・天候・身体が音になる</p>
+  <label style="font-size: 0.65rem; color: #8a9aaa; display: flex; align-items: center; gap: 8px; margin-top: 16px; cursor: pointer; border: 1px solid #1e3a5a; padding: 6px 12px; background: rgba(58,158,255,0.05); transition: 0.2s;">
+    <input type="checkbox" id="useLocCheck" style="accent-color: #3a9eff; width: 14px; height: 14px;">
+    <span>位置情報を取得して環境と同期する</span>
+  </label>
+  <p style="font-size:0.5rem; margin-top:4px; color:#1e3a5a; text-align:center; line-height: 1.4;">※オフの場合はランダムな座標（WANDERING）になります<br>※データは外部に送信・保存されません</p>
 </div>
 
 <!-- MAIN APP -->
@@ -392,8 +396,10 @@
   </div>
 
   <div id="padWrap">
-    <div id="padLabel">
-      X/Y TOUCH FIELD <span>X→DRIVE · Y↑RESONANCE</span>
+    <div id="padLabel" style="cursor: pointer; padding: 2px 4px; border: 1px solid transparent; transition: background 0.2s; user-select: none;">
+      <div id="padLabelText" style="display: flex; justify-content: space-between; width: 100%;">
+        X/Y TOUCH FIELD <span style="color:var(--accent)">[1] X→DRIVE · Y↑RESON</span>
+      </div>
     </div>
     <div id="touchpad">
       <canvas id="padCanvas"></canvas>
@@ -433,11 +439,13 @@
   let audioCtx = null;
   let nodes = {};
   let sensitivity = 1.0;
-  let padX = 0.5, padY = 0.5;
   let rafId = null;
   let spikeActive = false;
   let orientAlpha = 0, orientBeta = 0, orientGamma = 0, accelMag = 0;
   let padPointerDown = false;
+
+  let padMode = 0; // 0: DRIVE/RES, 1: GEN-MIX/MOD
+  let padState = [{x: 0.5, y: 0.5}, {x: 0.0, y: 0.0}];
 
   // ── HEIGHT STATE ──
   let heightVelocity = 0;
@@ -460,12 +468,17 @@
   const bootEl = document.getElementById('boot');
   const appEl = document.getElementById('app');
   const startBtn = document.getElementById('startBtn');
+  const useLocCheck = document.getElementById('useLocCheck');
   const statusDot = document.getElementById('statusDot');
   const statusText = document.getElementById('statusText');
   const sensorStatus = document.getElementById('sensorStatus');
   const touchpad = document.getElementById('touchpad');
   const padCanvas = document.getElementById('padCanvas');
   const ctx2d = padCanvas.getContext('2d');
+  const padLabel = document.getElementById('padLabel');
+  const padLabelText = document.getElementById('padLabelText');
+  const padAxisX = document.getElementById('padAxisX');
+  const padAxisY = document.getElementById('padAxisY');
 
   // Sliders
   const sensitivitySlider = document.getElementById('sensitivitySlider');
@@ -655,10 +668,42 @@
     heightGain.connect(merger, 0, 0);
     heightGain.connect(merger, 0, 1);
 
+    // ─ GENERATIVE DRONE LAYER ─
+    const genOsc1 = audioCtx.createOscillator();
+    genOsc1.type = 'triangle';
+    genOsc1.frequency.value = 98; // slightly detuned
+    const genOsc2 = audioCtx.createOscillator();
+    genOsc2.type = 'sine';
+    genOsc2.frequency.value = 101; 
+
+    const genModLFO = audioCtx.createOscillator();
+    genModLFO.type = 'sine';
+    genModLFO.frequency.value = 0.1;
+    
+    const genModGain = audioCtx.createGain();
+    genModGain.gain.value = 0;
+    
+    genModLFO.connect(genModGain);
+    genModGain.connect(genOsc1.frequency);
+    genModGain.connect(genOsc2.frequency);
+
+    const genGain = audioCtx.createGain();
+    genGain.gain.value = 0.0;
+    
+    genOsc1.connect(genGain);
+    genOsc2.connect(genGain);
+    
+    genOsc1.start();
+    genOsc2.start();
+    genModLFO.start();
+
+    genGain.connect(merger, 0, 0);
+    genGain.connect(merger, 0, 1);
+
     // Store refs
     nodes = { masterGain, noiseBPF, droneOsc, preGain, droneOsc2, accelFilter,
               delayNodeL, delayNodeR, feedbackGainL, feedbackGainR,
-              heightOsc, heightGain };
+              heightOsc, heightGain, genGain, genModGain, genModLFO };
   }
 
   // ── SENSOR HANDLERS ──
@@ -785,34 +830,12 @@
     const w = padCanvas.width, h = padCanvas.height;
     ctx2d.clearRect(0, 0, w, h);
 
-    const px = padX * w;
-    const py = padY * h;
-
-    // Crosshair lines
-    ctx2d.strokeStyle = 'rgba(200,255,0,0.18)';
-    ctx2d.lineWidth = 1;
-    ctx2d.setLineDash([4, 6]);
-    ctx2d.beginPath();
-    ctx2d.moveTo(px, 0); ctx2d.lineTo(px, h);
-    ctx2d.moveTo(0, py); ctx2d.lineTo(w, py);
-    ctx2d.stroke();
-    ctx2d.setLineDash([]);
-
-    // Center dot glow
-    const grad = ctx2d.createRadialGradient(px, py, 0, px, py, 22);
-    grad.addColorStop(0, 'rgba(200,255,0,0.95)');
-    grad.addColorStop(0.3, 'rgba(200,255,0,0.4)');
-    grad.addColorStop(1, 'rgba(200,255,0,0)');
-    ctx2d.fillStyle = grad;
-    ctx2d.beginPath();
-    ctx2d.arc(px, py, 22, 0, Math.PI * 2);
-    ctx2d.fill();
-
-    // Core dot
-    ctx2d.fillStyle = '#c8ff00';
-    ctx2d.beginPath();
-    ctx2d.arc(px, py, 4, 0, Math.PI * 2);
-    ctx2d.fill();
+    // Draw inactive pad dimly
+    const inactiveMode = 1 - padMode;
+    drawCrosshair(padState[inactiveMode].x * w, padState[inactiveMode].y * h, inactiveMode, 0.25, w, h);
+    
+    // Draw active pad brightly
+    drawCrosshair(padState[padMode].x * w, padState[padMode].y * h, padMode, 1.0, w, h);
 
     // Corner tick marks
     const tm = 12;
@@ -831,17 +854,85 @@
     rafId = requestAnimationFrame(drawPad);
   }
 
+  function drawCrosshair(px, py, mode, alpha, w, h) {
+    const color = mode === 0 ? `rgba(200,255,0,${alpha})` : `rgba(0,234,255,${alpha})`;
+    const glowColor = mode === 0 ? `rgba(200,255,0,${alpha*0.95})` : `rgba(0,234,255,${alpha*0.95})`;
+    const coreColor = mode === 0 ? '#c8ff00' : '#00eaff';
+
+    ctx2d.strokeStyle = color.replace(/[\d.]+\)$/g, (alpha*0.2) + ')');
+    ctx2d.lineWidth = 1;
+    ctx2d.setLineDash([4, 6]);
+    ctx2d.beginPath();
+    ctx2d.moveTo(px, 0); ctx2d.lineTo(px, h);
+    ctx2d.moveTo(0, py); ctx2d.lineTo(w, py);
+    ctx2d.stroke();
+    ctx2d.setLineDash([]);
+
+    if (alpha > 0.5) {
+      const grad = ctx2d.createRadialGradient(px, py, 0, px, py, 22);
+      grad.addColorStop(0, glowColor);
+      grad.addColorStop(0.3, color.replace(/[\d.]+\)$/g, (alpha*0.4) + ')'));
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx2d.fillStyle = grad;
+      ctx2d.beginPath();
+      ctx2d.arc(px, py, 22, 0, Math.PI * 2);
+      ctx2d.fill();
+
+      ctx2d.fillStyle = coreColor;
+      ctx2d.beginPath();
+      ctx2d.arc(px, py, 4, 0, Math.PI * 2);
+      ctx2d.fill();
+    } else {
+      ctx2d.fillStyle = color;
+      ctx2d.beginPath();
+      ctx2d.arc(px, py, 3, 0, Math.PI * 2);
+      ctx2d.fill();
+    }
+  }
+
   function updateAudioFromPad() {
-    if (!audioCtx || !nodes.preGain) return;
+    if (!audioCtx) return;
     const now = audioCtx.currentTime;
     const tc = 0.05;
-    // X → Pre-Gain (Drive): 1.0 → 50.0+
-    const drive = 1.0 + padX * padX * 80.0;
-    nodes.preGain.gain.setTargetAtTime(drive, now, tc);
-    // Y → BPF Q (Resonance): top=30, bottom=1
-    const q = 1.0 + (1.0 - padY) * 29.0;
-    nodes.noiseBPF.Q.setTargetAtTime(q, now, tc);
+    
+    // PAD 0: Drive and Resonance
+    if (nodes.preGain && nodes.noiseBPF) {
+      const drive = 1.0 + padState[0].x * padState[0].x * 80.0;
+      nodes.preGain.gain.setTargetAtTime(drive, now, tc);
+      const q = 1.0 + (1.0 - padState[0].y) * 29.0;
+      nodes.noiseBPF.Q.setTargetAtTime(q, now, tc);
+    }
+    
+    // PAD 1: Generative Drone Mix and Modulation
+    if (nodes.genGain && nodes.genModGain && nodes.genModLFO) {
+      // X controls mix
+      nodes.genGain.gain.setTargetAtTime(padState[1].x * 0.8, now, tc);
+      // Y controls modulation depth and rate
+      nodes.genModGain.gain.setTargetAtTime(padState[1].y * 150, now, tc);
+      nodes.genModLFO.frequency.setTargetAtTime(0.05 + padState[1].y * 8.0, now, tc);
+    }
   }
+
+  // Switch modes on label tap
+  padLabel.addEventListener('click', () => {
+    padMode = 1 - padMode;
+    padLabel.style.background = 'rgba(255,255,255,0.1)';
+    setTimeout(() => padLabel.style.background = 'transparent', 200);
+
+    if (padMode === 0) {
+      padLabelText.innerHTML = 'X/Y TOUCH FIELD <span style="color:var(--accent)">[1] X→DRIVE · Y↑RESON</span>';
+      padAxisX.textContent = '◄ DRIVE ►';
+      padAxisY.textContent = 'RESONANCE';
+      padAxisX.style.color = 'var(--dim)';
+      padAxisY.style.color = 'var(--dim)';
+    } else {
+      padLabelText.innerHTML = 'X/Y TOUCH FIELD <span style="color:var(--blue)">[2] X→GEN MIX · Y↑MOD</span>';
+      padAxisX.textContent = '◄ GEN MIX ►';
+      padAxisY.textContent = 'MODULATION';
+      padAxisX.style.color = 'var(--blue)';
+      padAxisY.style.color = 'var(--blue)';
+    }
+  });
 
   function getPadCoords(e) {
     const rect = touchpad.getBoundingClientRect();
@@ -854,21 +945,24 @@
     e.preventDefault();
     touchpad.setPointerCapture(e.pointerId);
     padPointerDown = true;
-    [padX, padY] = getPadCoords(e);
+    const coords = getPadCoords(e);
+    padState[padMode].x = coords[0];
+    padState[padMode].y = coords[1];
     updateAudioFromPad();
   });
 
   touchpad.addEventListener('pointermove', (e) => {
     if (!padPointerDown) return;
     e.preventDefault();
-    [padX, padY] = getPadCoords(e);
+    const coords = getPadCoords(e);
+    padState[padMode].x = coords[0];
+    padState[padMode].y = coords[1];
     updateAudioFromPad();
   });
 
   touchpad.addEventListener('pointerup', (e) => {
     e.preventDefault();
     padPointerDown = false;
-    // Hold last position — no reset
   });
 
   touchpad.addEventListener('pointercancel', (e) => {
@@ -878,15 +972,27 @@
   // ── ENV FUNCTIONS ──
 
   function initGeolocation() {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(pos => {
-      env.lat = pos.coords.latitude;
-      env.lon = pos.coords.longitude;
-      // Lat [-90..90] → 0..1; Lon [-180..180] → 0..1
-      envMod.loc = ((env.lat + 90) / 180 * 0.5) + ((env.lon + 180) / 360 * 0.5);
-      envLoc.textContent = env.lat.toFixed(2) + '°,' + env.lon.toFixed(2) + '°';
-      fetchWeather();
-    }, () => { envLoc.textContent = 'unavail'; });
+    if (useLocCheck.checked && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(pos => {
+        env.lat = pos.coords.latitude;
+        env.lon = pos.coords.longitude;
+        // Lat [-90..90] → 0..1; Lon [-180..180] → 0..1
+        envMod.loc = ((env.lat + 90) / 180 * 0.5) + ((env.lon + 180) / 360 * 0.5);
+        envLoc.textContent = env.lat.toFixed(2) + '°,' + env.lon.toFixed(2) + '°';
+        fetchWeather();
+      }, () => { setWanderingLocation(); });
+    } else {
+      setWanderingLocation();
+    }
+  }
+
+  function setWanderingLocation() {
+    // Generate random coordinates
+    env.lat = (Math.random() * 180) - 90;
+    env.lon = (Math.random() * 360) - 180;
+    envMod.loc = ((env.lat + 90) / 180 * 0.5) + ((env.lon + 180) / 360 * 0.5);
+    envLoc.textContent = 'WANDERING';
+    fetchWeather();
   }
 
   async function fetchWeather() {
